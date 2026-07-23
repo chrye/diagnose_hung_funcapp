@@ -32,6 +32,7 @@ Sampling is now off and an exception was captured on 7/14, so telemetry is no lo
 Need state-transition timeout telemetry to prove where long-running jobs stop progressing.
 
 10. Add dependency resilience for outbound API paths (retry policy, timeout budget, failure classification, DLQ handling).
+Since the 7/14 error chain points to downstream API failure during Service Bus processing (ApiException in EmailQueue path). This should be handled with bounded retries, circuit-breaker behavior, and clear dead-letter/poison handling policy.
 
 11. Keep weekly restart only as temporary control until above items are live and validated.
 
