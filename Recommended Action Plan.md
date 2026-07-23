@@ -30,7 +30,7 @@ Replace Task.Factory.StartNew-style persistence calls [Task.Factory.StartNew for
 8. Keep weekly restart only as temporary mitigation.
 Continue weekend restart only as an operational guardrail until hardening changes are deployed and validated; do not treat restart as the fix.
 
-### Diagnostic resilience actions (implement in parallel)
+#### Diagnostic resilience actions (implement in parallel)
 
 9. Strengthen observability for failure-mode separation.
 With sampling disabled and exceptions now visible, add workflow-stage telemetry so we can clearly distinguish failed-fast errors from true hangs/stalls.
