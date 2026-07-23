@@ -1,40 +1,52 @@
-## Technical recommendation set (short-term and medium-term)
+## Technical recommendations (short-term and medium-term)
 
-### Short-term hardening (low-risk changes first)
+### Short-Term Hardening Recommendations
 
-1. Replace Task.WaitAll + task.Result with await Task.WhenAll.
-Locations include PluginRunner.cs.
+#### Immediate hardening actions (implement now)
 
-2. Remove unbounded while loop on list count and replace with explicit init result validation.
-Current risky loop at PluginRunner.cs.
+1. Replace blocking task waits with async coordination.
+Replace Task.WaitAll and task.Result usage with await Task.WhenAll in the plugin initialization paths to avoid blocked worker threads and improve cancellation behavior.
+[WorkflowManager.Core/Services/PluginRunner.cs]
 
-3. Make init methods return explicit structured result:
-Success, AddedExecution, SequenceId, FailureReason.
-Do not infer correctness from shared list count.
+2. Remove unbounded completion loops.
+Replace any open-ended list-count waiting loops with explicit completion validation and bounded timeout logic, so initialization cannot wait indefinitely.
+[WorkflowManager.Core/Services/PluginRunner.cs]
 
-4. Fix ProvisionSb event-arg bug.
-Update captured state correctly in ProvisionSb.cs so the caller sees failure.
+3. Return explicit initialization outcomes.
+Update init methods to return structured results (for example: Success, AddedExecution, SequenceId, FailureReason) rather than inferring correctness from shared mutable collections.
 
-5. Add timeout and cancellation to init and dependency calls.
-Particularly around Key Vault/API metadata/DB in init paths at PluginRunner.cs.
+4. Fix ProvisionSb failure-state propagation.
+Correct event/state capture so job creation failure is reliably surfaced to the caller and downstream handling logic. [ProvisionSb.cs]
 
-6. Add deterministic runner cleanup.
-WorkFlowManagerNew keeps runner dictionary state; add explicit remove on terminal states and unsubscribe event handlers. Add telemetry for count.
-Dictionary declaration at WorkFlowManagerNew.cs.
+5. Apply timeout budgets and cancellation tokens to dependency calls.
+Add per-call timeout and cancellation to Key Vault, API metadata, DB, and related init/dependency operations, with an overall step-level time budget. [PluginRunner.cs]
 
-7. Stop fire-and-forget persistence calls.
-Task.Factory.StartNew for SaveDataToDb appears in many places, for example PluginRunner.cs. Convert to awaited flow or reliable queued persistence.
+6. Add deterministic runner lifecycle cleanup.
+Ensure runner entries are removed on terminal states, event handlers are unsubscribed, and active-runner count telemetry is emitted to prevent long-run accumulation. [WorkflowManager.Core/Services/WorkFlowManagerNew.cs]
 
-8. Promote observability-hardening
-Sampling is now off and an exception was captured on 7/14, so telemetry is no longer the main blind spot. The next gap is distinguishing failed-fast errors from true hangs/stalls.
+7. Remove untracked fire-and-forget persistence.
+Replace Task.Factory.StartNew-style persistence calls [Task.Factory.StartNew for SaveDataToDb appears in many places, for example PluginRunner.cs] with awaited async persistence or reliable queued persistence to avoid silent failures and orphaned work.
 
-9. Add explicit "stuck workflow detector": per-stage timeout + heartbeat/state-transition logging for each workflow job.
-Need state-transition timeout telemetry to prove where long-running jobs stop progressing.
+8. Keep weekly restart only as temporary mitigation.
+Continue weekend restart only as an operational guardrail until hardening changes are deployed and validated; do not treat restart as the fix.
 
-10. Add dependency resilience for outbound API paths (retry policy, timeout budget, failure classification, DLQ handling).
-Since the 7/14 error chain points to downstream API failure during Service Bus processing (ApiException in EmailQueue path). This should be handled with bounded retries, circuit-breaker behavior, and clear dead-letter/poison handling policy.
+### Diagnostic resilience actions (implement in parallel)
 
-11. Keep weekly restart only as temporary control until above items are live and validated.
+9. Strengthen observability for failure-mode separation.
+With sampling disabled and exceptions now visible, add workflow-stage telemetry so we can clearly distinguish failed-fast errors from true hangs/stalls.
+
+10. Add a stuck-workflow detector.
+Implement per-stage timeout plus heartbeat/state-transition logging for each workflow job to identify exactly where long-running jobs stop progressing.
+
+11. Add outbound dependency resilience.
+Implement bounded retry policy, timeout budget, failure classification, and DLQ/poison handling for outbound API paths. This is especially important given the 7/14 Service Bus processing path showing downstream ApiException behavior.
+
+Expected outcome
+1. Reduced recurrence risk from known code-path hang/stall patterns.
+2. Faster, evidence-based isolation of root cause if incidents recur.
+3. Clear separation of transient dependency failures vs workflow orchestration stalls.
+4. Ability to retire weekly restart once stability is demonstrated over a full operating window.
+
 
 #### **Patch Goal**
 Keep Raja's sequencing intent (barrier before processing) while removing hang-prone patterns in the active .NET isolated workflow path.
@@ -182,10 +194,8 @@ If step hasn't progressed within threshold, mark job as stalled with explicit re
 - Query dependency failures by target/type to find trigger systems.
 
 3. Decide action path
-- Failed-fast dominant:
-- Fix error handling, retries, timeout budgets, fallback policy, poison/dead-letter behavior.
-- Stall dominant:
-- Fix orchestration lifecycle: bounded waits, cancellation flow, in-memory state cleanup, no fire-and-forget critical paths, watchdog transitions.
+- Failed-fast dominant: Fix error handling, retries, timeout budgets, fallback policy, poison/dead-letter behavior.
+- Stall dominant: Fix orchestration lifecycle: bounded waits, cancellation flow, in-memory state cleanup, no fire-and-forget critical paths, watchdog transitions.
 
 #### What to implement in code so KQL becomes definitive
 
